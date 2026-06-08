@@ -2,7 +2,7 @@
 Face Processor - Detects, recorta y remueve el fondo de fotos de personas.
 Usa OpenCV para detección facial y remove.bg API para remoción de fondo.
 """
-
+import sys
 import cv2
 import numpy as np
 import requests
@@ -25,10 +25,23 @@ MIN_FACE_SIZE    = 30                   # Tamaño mínimo de cara en píxeles
 
 
 def detect_faces(image: np.ndarray) -> list[tuple]:
-    """Detecta caras en la imagen usando el clasificador Haar de OpenCV."""
+    """Detecta caras usando el clasificador Haar con rutas optimizadas para .exe."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    
+    # Esta lógica busca los archivos XML en el entorno de ejecución
+    if getattr(sys, 'frozen', False):
+        # Si es un .exe, busca en la carpeta temporal de PyInstaller
+        cascade_path = os.path.join(sys._MEIPASS, "cv2", "data", "haarcascade_frontalface_default.xml")
+    else:
+        # Si es script normal, usa la ruta estándar de cv2
+        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        
     detector = cv2.CascadeClassifier(cascade_path)
+    
+    # Backup: Si la ruta anterior falla, intenta cargar directamente el archivo 
+    # (por si el path de arriba no es exacto en tu versión de opencv)
+    if detector.empty():
+        detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
     faces = detector.detectMultiScale(
         gray,

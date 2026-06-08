@@ -25,7 +25,6 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 
 # Librerías de Generación y Nube
-import openpyxl
 from docx import Document
 from docx.shared import Pt
 from pptx import Presentation
@@ -45,9 +44,8 @@ try:
     if sys.platform == "win32":
         import win32com.client
         import pythoncom
-    EXCEL_ADAPTER_DISPONIBLE = True
 except ImportError:
-    EXCEL_ADAPTER_DISPONIBLE = False
+    pass
 
 # ─────────────────────────────────────────────────────────────────────
 # CREDENCIALES DE CORREO (Asegúrate de llenarlas con tus datos)
@@ -55,12 +53,11 @@ except ImportError:
 MI_CORREO = os.getenv("CORREO_EMISOR")  
 CONTRASENA_APP = os.getenv("CONTRASENA_APP")
 
-# Verificación de seguridad básica (opcional, para avisar en consola si falta el .env)
 if not MI_CORREO or not CONTRASENA_APP:
     print("ADVERTENCIA: No se encontraron las credenciales de correo en el archivo .env")
 
 # ─────────────────────────────────────────────────────────────────────
-# RUTA BASE Y CARPETAS
+# RUTA BASE Y CARPETAS (Sin bases de datos)
 # ─────────────────────────────────────────────────────────────────────
 def get_base_dir() -> Path:
     if getattr(sys, 'frozen', False):
@@ -69,11 +66,8 @@ def get_base_dir() -> Path:
 
 BASE_DIR = get_base_dir()
 CONFIG_FILE = BASE_DIR / "config.json"
-RUTA_BASES_DATOS = BASE_DIR / "bases de datos"
 RUTA_MODULOS = BASE_DIR / "modulos"
 
-RUTA_EXCEL = RUTA_BASES_DATOS / "pruebaEC.xlsx"
-RUTA_BD = RUTA_BASES_DATOS / "Libro1.xlsx"
 CREDENTIALS_FILE = BASE_DIR / "educacion-continua-490016-7ff6875c1d8f.json"
 
 RUTA_IMAGENES = BASE_DIR / "imagenes"
@@ -82,11 +76,9 @@ RUTA_PLANTILLAS_NUEVAS = BASE_DIR / "PlantillasAct"
 RUTA_PLANTILLAS_VIEJAS = BASE_DIR / "PlantillasActIngJorge"
 RUTA_SALIDA = BASE_DIR / "Tramites Digitales"
 
-# EL ID DE SEGUIMIENTO AHORA ES FIJO OTRA VEZ
 ID_SEGUIMIENTO_NUBE = "1szQLci5kxO10bTGyzQ1wQrQ9z_hITA0uAUHEZ-loaJU"
 HOJA_TEC = "SEGUIMIENTO TEC"
 HOJA_ESP = "SEGUIMIENTO ESP"
-HOJA_BD = "tramites Hechos"
 
 sys.path.append(str(RUTA_MODULOS))
 try:
@@ -117,33 +109,23 @@ def matar_proceso(nombre_exe: str):
     if sys.platform == "win32":
         subprocess.call(["taskkill", "/f", "/im", nombre_exe], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-def matar_proceso_excel():
-    matar_proceso("excel.exe")
-
 def limpiar_valor(valor):
-    """Elimina decimales .0 para no mostrar números como flotantes."""
     if valor is None: return ""
-    
     if isinstance(valor, float) and valor.is_integer():
         return str(int(valor))
-        
     v_str = str(valor).strip()
     if v_str.endswith(".0"): 
         v_str = v_str[:-2]
     return v_str
 
 def normalizar_condicion(valor):
-    """Limpia la celda quitando espacios, pasando a MAYÚSCULAS y quitando acentos."""
     if not valor: 
         return ""
     v = str(valor).strip().upper()
     return v.replace("SÍ", "SI").replace("NÓ", "NO")
 
-def cargar_procesadas(hoja_bd) -> set:
-    return {hoja_bd.cell(row=r, column=2).value for r in range(2, hoja_bd.max_row + 1) if hoja_bd.cell(row=r, column=2).value}
-
 def obtener_filas_nube(servicio, nombre_hoja):
-    """Obtiene las filas de Google Sheets usando el ID FIJO maestro."""
+    """Obtiene el mapeo de Matrículas -> Fila en Google Sheets para hacer actualizaciones exactas."""
     try:
         res = servicio.spreadsheets().values().get(spreadsheetId=ID_SEGUIMIENTO_NUBE, range=f"'{nombre_hoja}'!B:B").execute()
         return {limpiar_valor(fila[0]): i + 1 for i, fila in enumerate(res.get("values", [])) if fila}
@@ -221,7 +203,6 @@ def enviarTEC(ruta1, ruta2, correo_destinatario, log):
 # LÓGICA DE GENERACIÓN (Kardex y Diplomas)
 # ─────────────────────────────────────────────────────────────────────
 def limpiar_para_ruta(texto: str) -> str:
-    """Elimina acentos, caracteres inválidos de Windows y espacios al final para evitar errores de COM."""
     if not texto: return "Desconocido"
     texto_limpio = "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn')
     texto_limpio = re.sub(r'[<>:"/\\|?*]', '', texto_limpio)
@@ -256,7 +237,6 @@ def generar_diploma(nombre: str, carrera: str, ppt_app, log, ruta_plantillas):
         return None
 
     prs = Presentation(str(plantilla))
-    
     colecciones = [
         prs.slides[0].shapes,
         prs.slides[0].slide_layout.shapes,
@@ -387,10 +367,8 @@ def generar_diploma_esp(nombre: str, carrera: str, horas: str, ppt_app, log, rut
         log.error(f"Plantilla ESP no encontrada: {plantilla}")
         return None
 
-
     prs = Presentation(str(plantilla))
     
-
     try:
         h_float = float(horas)
         h_val = int(h_float)
@@ -497,7 +475,7 @@ class SettingsWindow(tk.Toplevel):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Trámites Digitales FIME - Final")
+        self.title("Trámites Digitales FIME - 100% Cloud")
         self.geometry("1100x750") 
         self.configure(bg=DARK_BG)
         self.config = self._load_config()
@@ -577,10 +555,9 @@ class App(tk.Tk):
             b.tag_config("WARNING", foreground=WARNING)
             b.tag_config("SUCCESS", foreground=SUCCESS)
 
-        # NUEVO DASHBOARD (LADO DERECHO)
+        # DASHBOARD
         right = tk.Frame(body, bg=DARK_BG); right.grid(row=0, column=1, sticky="nsew")
         
-        # 1. Cuadrícula de Contadores
         frame_counters = tk.Frame(right, bg=DARK_BG)
         frame_counters.pack(fill="x", pady=(0, 10))
         frame_counters.columnconfigure(0, weight=1)
@@ -592,7 +569,6 @@ class App(tk.Tk):
         self.lbl_omit = self._card_grid(frame_counters, "⏭️ OMITIDOS", "0", WARNING, 1, 1)
         self.lbl_err = self._card_grid(frame_counters, "❌ ERRORES", "0", ERROR_COLOR, 2, 0, columnspan=2)
 
-        # 2. Tarjeta Dinámica de "Último Procesado"
         self.frame_last = tk.Frame(right, bg=PANEL_BG, highlightbackground=BORDER, highlightthickness=1)
         self.frame_last.pack(fill="both", expand=True, pady=(10, 10))
         
@@ -604,7 +580,6 @@ class App(tk.Tk):
         self.lbl_last_details = tk.Label(self.frame_last, text="\n\n", font=("Segoe UI", 10), bg=PANEL_BG, fg=TEXT_DIM, justify="left")
         self.lbl_last_details.pack(anchor="w", padx=12, pady=(8, 15))
 
-        # Botón de Inicio
         self.btn = tk.Button(right, text="▶  INICIAR", font=("Segoe UI", 12, "bold"), bg=ACCENT, fg=DARK_BG, relief="flat", pady=12, command=self._start)
         self.btn.pack(fill="x", side="bottom")
 
@@ -639,12 +614,11 @@ class App(tk.Tk):
         self.is_paused = False
         self.pause_event.set()
 
-        # Reseteo del Dashboard
         self.tot_tec = 0; self.tot_esp = 0; self.tot_correos = 0; self.tot_omitidos = 0; self.errores = 0
         self.lbl_tec.config(text="0"); self.lbl_esp.config(text="0"); self.lbl_correos.config(text="0")
         self.lbl_omit.config(text="0"); self.lbl_err.config(text="0")
         self.lbl_last_name.config(text="Iniciando...", fg=ACCENT)
-        self.lbl_last_details.config(text="Conectando a los servicios...\nPor favor espera.")
+        self.lbl_last_details.config(text="Conectando a Google API...\nPor favor espera.")
         
         self.matriculas_vistas = set()
 
@@ -673,29 +647,24 @@ class App(tk.Tk):
 
     def _worker(self):
         log = logging.getLogger("EC")
-        word_app, ppt_app, excel = None, None, None
+        word_app, ppt_app = None, None
         modo_prueba = self.modo_prueba.get()
 
         if sys.platform == "win32": pythoncom.CoInitialize()
 
-        if not RUTA_EXCEL.exists() or not RUTA_BD.exists():
-            log_queue.put(("error", f"❌ Falta archivo Excel o Libro1.xlsx en 'bases de datos'", "ERROR"))
-            if sys.platform == "win32": pythoncom.CoUninitialize()
-            return
-
         try:
-            log.info("Conectando con Google Forms y Sheets...")
+            log.info("Conectando con Google Forms y Sheets API...")
             creds = service_account.Credentials.from_service_account_file(str(CREDENTIALS_FILE), scopes=["https://www.googleapis.com/auth/spreadsheets"])
             serv = build("sheets", "v4", credentials=creds, cache_discovery=False)
 
             m_tec, m_esp = {}, {}
             matriculas_en_formularios = set() 
             
+            # Recolectar datos de los formularios
             for fid in self.config.get("forms_ids", []):
                 try:
                     res = serv.spreadsheets().values().get(spreadsheetId=fid, range="'Respuestas de formulario 1'!A:AK").execute()
                     for fila in res.get("values", []):
-                        
                         correo_form = limpiar_valor(fila[35]) if len(fila) > 35 else ""
                         
                         mat_tec = limpiar_valor(fila[7]) if len(fila) > 7 else ""
@@ -719,273 +688,217 @@ class App(tk.Tk):
             filas_tec = obtener_filas_nube(serv, HOJA_TEC)
             filas_esp = obtener_filas_nube(serv, HOJA_ESP)
             lote_nube = []
+            procesadas = set() # Evita procesar dos veces a la misma persona en una sola ejecución
 
             self.pause_event.wait()
 
-            log.info("Inicializando motores de Office...")
-            excel = win32com.client.DispatchEx("Excel.Application")
-            excel.Visible = False; excel.DisplayAlerts = False
+            log.info("☁️ Descargando datos directamente de Google Sheets (Sin Excel local)...")
+            res_tec = serv.spreadsheets().values().get(spreadsheetId=ID_SEGUIMIENTO_NUBE, range=f"'{HOJA_TEC}'!A:AK").execute()
+            datos_tec = res_tec.get("values", [])
+
+            res_esp = serv.spreadsheets().values().get(spreadsheetId=ID_SEGUIMIENTO_NUBE, range=f"'{HOJA_ESP}'!A:AK").execute()
+            datos_esp = res_esp.get("values", [])
+
+            log.info("Inicializando motores de Office (Word/PPTX)...")
             word_app = win32com.client.DispatchEx("Word.Application")
             word_app.Visible = False; word_app.DisplayAlerts = False
             ppt_app = win32com.client.DispatchEx("PowerPoint.Application")
 
-            wb_bd = openpyxl.load_workbook(str(RUTA_BD))
-            h_bd = wb_bd[HOJA_BD]
-            procesadas = cargar_procesadas(h_bd)
-            sig_fila_bd = h_bd.max_row + 1
-
-            log.info("🔄 Refrescando conexiones web de Seguimiento...")
-            wb = excel.Workbooks.Open(os.path.abspath(RUTA_EXCEL))
-
-            for c in wb.Connections:
-                try: c.OLEDBConnection.BackgroundQuery = False
-                except: pass
-                try: c.ODBCConnection.BackgroundQuery = False
-                except: pass
-                try: c.DataFeedConnection.BackgroundQuery = False  
-                except: pass
-
-            wb.RefreshAll()
-            
-            log.info("⏳ Esperando a que Excel termine de descargar los datos de la nube...")
-            tiempo_espera = 0
-            while tiempo_espera < 60: 
-                pythoncom.PumpWaitingMessages() 
-                
-                refrescando = False
-                for c in wb.Connections:
-                    try: 
-                        if c.OLEDBConnection.Refreshing: refrescando = True
-                    except: pass
-                    try: 
-                        if c.ODBCConnection.Refreshing: refrescando = True
-                    except: pass
-                
-                if not refrescando and excel.CalculationState == 0:
-                    break
-                    
-                time.sleep(1)
-                tiempo_espera += 1
-
-            excel.CalculateUntilAsyncQueriesDone()
-            wb.Save() 
-            log.info("✅ Descarga de la nube y refresco completados con éxito.")
-
             if modo_prueba:
-                log.info("🧪 MODO PRUEBA ACTIVO: Actuando como Diodo. Se bloquea la escritura en Sheets, Excel y Correos.")
+                log.info("🧪 MODO PRUEBA ACTIVO: Actuando como Diodo. Se bloquea la escritura en Sheets y Correos.")
 
             # ── FLUJO TEC ─────────────────────────────────────────────
             log.info("━" * 30 + "\nFLUJO TEC (Kardex, Diploma y Correo)")
             try:
-                h_tec = wb.Sheets(HOJA_TEC)
-                max_r = h_tec.Cells(h_tec.Rows.Count, 2).End(-4162).Row
-                if max_r >= 2:
-                    dt = h_tec.Range(h_tec.Cells(1, 1), h_tec.Cells(max_r, 36)).Value
-                    for f in range(2, max_r + 1):
-                        self.pause_event.wait()
-                        if not self.running: break
+                for i, fila_raw in enumerate(datos_tec):
+                    if i < 1: continue # Saltar encabezado (Fila 1)
+                    self.pause_event.wait()
+                    if not self.running: break
 
-                        fila = dt[f - 1]
-                        mat = limpiar_valor(fila[1])
-                        carrera = fila[3] or "Desconocida"
-                        
-                        # --- PLANTILLAS: siempre PlantillasAct ---
-                        ruta_plantillas_actual = RUTA_PLANTILLAS_NUEVAS
+                    # Rellenar con strings vacíos para evitar IndexErrors si Google Sheets omite columnas vacías al final
+                    fila = fila_raw + [""] * (40 - len(fila_raw))
 
-                        celda_envio = normalizar_condicion(fila[5])
-                        celda_papeleria = normalizar_condicion(fila[7])
-                        
-                        correo_excel = limpiar_valor(fila[35]) if len(fila) > 35 else ""
-                        correo_destinatario = ""
-                        nombre_actual = str(fila[2]).strip().title() if fila[2] else "Desconocido"
+                    mat = limpiar_valor(fila[1])
+                    if not mat: continue
 
-                        if mat in m_tec:
-                            nombre_actual = m_tec[mat]["nombre"]
-                            correo_destinatario = m_tec[mat]["correo"]
-                            if not modo_prueba:
-                                h_tec.Cells(f, 3).Value = nombre_actual
-                                
-                        if not correo_destinatario:
-                            correo_destinatario = correo_excel
-                
-                        if celda_envio == "SI" and celda_papeleria == "NO" and mat not in procesadas:
+                    carrera = fila[3] or "Desconocida"
+                    ruta_plantillas_actual = RUTA_PLANTILLAS_NUEVAS
+
+                    celda_envio = normalizar_condicion(fila[5])
+                    celda_papeleria = normalizar_condicion(fila[7])
+                    
+                    correo_excel = limpiar_valor(fila[35])
+                    correo_destinatario = ""
+                    nombre_actual = str(fila[2]).strip().title() if fila[2] else "Desconocido"
+
+                    # Autocorrección de nombres desde el Formulario
+                    if mat in m_tec:
+                        nombre_actual = m_tec[mat]["nombre"]
+                        correo_destinatario = m_tec[mat]["correo"]
+                        if not modo_prueba and mat in filas_tec:
+                            lote_nube.append({"range": f"'{HOJA_TEC}'!C{filas_tec[mat]}", "values": [[nombre_actual]]})
                             
-                            if mat not in matriculas_en_formularios:
-                                log.warning(f"⏭️ {nombre_actual} ({mat}) omitido TEC: Cumple en Excel, pero NO está en las respuestas de los formularios.")
+                    if not correo_destinatario:
+                        correo_destinatario = correo_excel
+                
+                    # Filtro de ejecución
+                    if celda_envio == "SI" and celda_papeleria == "NO" and mat not in procesadas:
+                        
+                        if mat not in matriculas_en_formularios:
+                            log.warning(f"⏭️ {nombre_actual} ({mat}) omitido TEC: Cumple en Excel, pero NO está en las respuestas.")
+                            log_queue.put(("metric", "omitido", "INFO"))
+                            continue
+
+                        log.info(f"⚙️ Procesando TEC | Matrícula: {mat} | Oferta: {carrera} | Alumno: {nombre_actual}")
+                        procesadas.add(mat) # Evitar que en esta misma ejecución se duplique
+                        
+                        ruta_descargada, nombre_descargado = descargar_foto(matricula=mat, carpeta_destino=str(RUTA_IMAGENES))
+                        ruta_foto, exito = procesar_imagen(nombre_actual, mat, log)
+                        
+                        if not exito:
+                            if not modo_prueba:
+                                if mat in filas_tec:
+                                    lote_nube.append({"range": f"'{HOJA_TEC}'!F{filas_tec[mat]}", "values": [["Foto invalida"]]})
                                 log_queue.put(("metric", "omitido", "INFO"))
                                 continue
-
-                            log.info(f"⚙️ Procesando TEC | Matrícula: {mat} | Oferta: {carrera} | Alumno: {nombre_actual}")
-                            
-                            ruta_descargada, nombre_descargado = descargar_foto(matricula=mat, carpeta_destino=str(RUTA_IMAGENES))
-                            ruta_foto, exito = procesar_imagen(nombre_actual, mat, log)
-                            
-                            if not exito:
-                                if not modo_prueba:
-                                    h_tec.Cells(f, 6).Value = "Foto invalida"
-                                    if mat in filas_tec:
-                                        lote_nube.append({"range": f"'{HOJA_TEC}'!F{filas_tec[mat]}", "values": [["Foto invalida"]]})
-                                    log_queue.put(("metric", "omitido", "INFO"))
-                                    continue
-                                else:
-                                    log.warning(f"⚠️ Sin foto para {nombre_actual} — se generará kardex sin imagen.")
-                                    ruta_foto = None
-
-                            califs = [fila[c - 1] for c in range(13, 24)]
-
-                            ruta_diploma = generar_diploma(nombre_actual, carrera, ppt_app, log, ruta_plantillas_actual)
-                            ruta_kardex = generar_kardex(nombre_actual, mat, carrera, califs, ruta_foto, word_app, log, ruta_plantillas_actual)
-
-                            if not modo_prueba:
-                                estado_tramite = "Pendiente"
-                                
-                                h_bd.cell(row=sig_fila_bd, column=1, value=nombre_actual)
-                                h_bd.cell(row=sig_fila_bd, column=2, value=mat)
-                                procesadas.add(mat); sig_fila_bd += 1
-                                
-                                if correo_destinatario and "@" in correo_destinatario:
-                                    if ruta_diploma and ruta_kardex:
-                                        envio_ok = enviarTEC(ruta_diploma, ruta_kardex, correo_destinatario, log)
-                                        if envio_ok: 
-                                            log_queue.put(("metric", "correo", "INFO"))
-                                            estado_tramite = "Si"
-                                            h_tec.Cells(f, 11).Value = "Correo enviado (Por codigo)"
-                                            if mat in filas_tec:
-                                                lote_nube.append({"range": f"'{HOJA_TEC}'!K{filas_tec[mat]}", "values": [["Correo enviado (Por codigo)"]]})
-                                else:
-                                    h_tec.Cells(f, 11).Value = "No se encontró su correo"
-                                    if mat in filas_tec:
-                                        lote_nube.append({"range": f"'{HOJA_TEC}'!K{filas_tec[mat]}", "values": [["No se encontró su correo"]]})
-                                    log.warning(f"⚠️ Sin correo válido para {nombre_actual}. Se marca en columna K.")
-                                
-                                h_tec.Cells(f, 8).Value = estado_tramite
-                                if mat in filas_tec:
-                                    lote_nube.append({"range": f"'{HOJA_TEC}'!H{filas_tec[mat]}", "values": [[estado_tramite]]})
-
                             else:
-                                if correo_destinatario and "@" in correo_destinatario:
-                                    log.info(f"🧪 PRUEBA: Simulación de correo TEC a {correo_destinatario}")
-                                else:
-                                    log.info(f"🧪 PRUEBA: Simulación de escritura 'No se encontró su correo' en Columna K para {nombre_actual}")
+                                log.warning(f"⚠️ Sin foto para {nombre_actual} — se generará kardex sin imagen.")
+                                ruta_foto = None
 
-                            log_queue.put(("metric", "tec", "INFO"))
+                        califs = [fila[c - 1] for c in range(13, 24)]
+
+                        ruta_diploma = generar_diploma(nombre_actual, carrera, ppt_app, log, ruta_plantillas_actual)
+                        ruta_kardex = generar_kardex(nombre_actual, mat, carrera, califs, ruta_foto, word_app, log, ruta_plantillas_actual)
+
+                        if not modo_prueba:
+                            estado_tramite = "Pendiente"
                             
-                            msg_resumen = f"[TEC] {'🧪 PRUEBA | ' if modo_prueba else ''}Matrícula: {mat}\n      👤 {nombre_actual}\n      🎓 Oferta: {carrera}\n      ↳ Documentos generados correctamente."
-                            log_queue.put(("res_tec", msg_resumen, "SUCCESS", nombre_actual, mat, carrera, ""))
+                            if correo_destinatario and "@" in correo_destinatario:
+                                if ruta_diploma and ruta_kardex:
+                                    envio_ok = enviarTEC(ruta_diploma, ruta_kardex, correo_destinatario, log)
+                                    if envio_ok: 
+                                        log_queue.put(("metric", "correo", "INFO"))
+                                        estado_tramite = "Si"
+                                        if mat in filas_tec:
+                                            lote_nube.append({"range": f"'{HOJA_TEC}'!K{filas_tec[mat]}", "values": [["Correo enviado (Por codigo)"]]})
+                            else:
+                                if mat in filas_tec:
+                                    lote_nube.append({"range": f"'{HOJA_TEC}'!K{filas_tec[mat]}", "values": [["No se encontró su correo"]]})
+                                log.warning(f"⚠️ Sin correo válido para {nombre_actual}. Se marca en columna K.")
+                            
+                            # Escribimos el Estado (que pasará a ser "Si")
+                            if mat in filas_tec:
+                                lote_nube.append({"range": f"'{HOJA_TEC}'!H{filas_tec[mat]}", "values": [[estado_tramite]]})
+
+                        else:
+                            if correo_destinatario and "@" in correo_destinatario:
+                                log.info(f"🧪 PRUEBA: Simulación de correo TEC a {correo_destinatario}")
+                            else:
+                                log.info(f"🧪 PRUEBA: Simulación de escritura 'No se encontró su correo' en Columna K para {nombre_actual}")
+
+                        log_queue.put(("metric", "tec", "INFO"))
+                        
+                        msg_resumen = f"[TEC] {'🧪 PRUEBA | ' if modo_prueba else ''}Matrícula: {mat}\n      👤 {nombre_actual}\n      🎓 Oferta: {carrera}\n      ↳ Documentos generados correctamente."
+                        log_queue.put(("res_tec", msg_resumen, "SUCCESS", nombre_actual, mat, carrera, ""))
 
             except Exception as e: log.error(f"Error TEC: {e}")
 
             # ── FLUJO ESP ─────────────────────────────────────────────
             log.info("━" * 30 + "\nFLUJO ESP (Diplomas y Correo)")
             try:
-                h_esp = wb.Sheets(HOJA_ESP)
-                max_r = h_esp.Cells(h_esp.Rows.Count, 2).End(-4162).Row
-                if max_r >= 2:
-                    dt = h_esp.Range(h_esp.Cells(1, 1), h_esp.Cells(max_r, 36)).Value
-                    for f in range(2, max_r + 1):
-                        self.pause_event.wait()
-                        if not self.running: break
+                for i, fila_raw in enumerate(datos_esp):
+                    if i < 1: continue
+                    self.pause_event.wait()
+                    if not self.running: break
 
-                        fila = dt[f - 1]
-                        mat = limpiar_valor(fila[1])
-                        carrera = fila[4] or "Desconocida"
-                        horas = limpiar_valor(fila[3]) or "0"
-                        
-                        # --- PLANTILLAS: siempre PlantillasAct ---
-                        ruta_plantillas_actual = RUTA_PLANTILLAS_NUEVAS
-                        
-                        celda_envio = normalizar_condicion(fila[7])
-                        celda_papeleria = normalizar_condicion(fila[9])
-                        
-                        correo_excel = limpiar_valor(fila[35]) if len(fila) > 35 else ""
-                        correo_destinatario = ""
-                        nombre_actual = str(fila[2]).strip().title() if fila[2] else "Desconocido"
+                    fila = fila_raw + [""] * (40 - len(fila_raw))
 
-                        if mat in m_esp:
-                            nombre_actual = m_esp[mat]["nombre"]
-                            correo_destinatario = m_esp[mat]["correo"]
-                            if not modo_prueba:
-                                h_esp.Cells(f, 3).Value = nombre_actual
-                                
-                        if not correo_destinatario:
-                            correo_destinatario = correo_excel
+                    mat = limpiar_valor(fila[1])
+                    if not mat: continue
 
-                        if celda_envio == "SI" and celda_papeleria == "NO" and mat not in procesadas:
+                    carrera = fila[4] or "Desconocida"
+                    horas = limpiar_valor(fila[3]) or "0"
+                    ruta_plantillas_actual = RUTA_PLANTILLAS_NUEVAS
+                    
+                    celda_envio = normalizar_condicion(fila[7])
+                    celda_papeleria = normalizar_condicion(fila[9])
+                    
+                    correo_excel = limpiar_valor(fila[35])
+                    correo_destinatario = ""
+                    nombre_actual = str(fila[2]).strip().title() if fila[2] else "Desconocido"
+
+                    if mat in m_esp:
+                        nombre_actual = m_esp[mat]["nombre"]
+                        correo_destinatario = m_esp[mat]["correo"]
+                        if not modo_prueba and mat in filas_esp:
+                            lote_nube.append({"range": f"'{HOJA_ESP}'!C{filas_esp[mat]}", "values": [[nombre_actual]]})
                             
-                            if mat not in matriculas_en_formularios:
-                                log.warning(f"⏭️ {nombre_actual} ({mat}) omitido ESP: Cumple en Excel, pero NO está en las respuestas de los formularios.")
-                                log_queue.put(("metric", "omitido", "INFO"))
-                                continue
+                    if not correo_destinatario:
+                        correo_destinatario = correo_excel
 
-                            log.info(f"⚙️ Procesando ESP | Matrícula: {mat} | Oferta: {carrera} ({horas} hrs) | Alumno: {nombre_actual}")
+                    if celda_envio == "SI" and celda_papeleria == "NO" and mat not in procesadas:
+                        
+                        if mat not in matriculas_en_formularios:
+                            log.warning(f"⏭️ {nombre_actual} ({mat}) omitido ESP: Cumple en Excel, pero NO está en las respuestas.")
+                            log_queue.put(("metric", "omitido", "INFO"))
+                            continue
+
+                        log.info(f"⚙️ Procesando ESP | Matrícula: {mat} | Oferta: {carrera} ({horas} hrs) | Alumno: {nombre_actual}")
+                        procesadas.add(mat)
+
+                        ruta_diploma = generar_diploma_esp(nombre_actual, carrera, str(horas), ppt_app, log, ruta_plantillas_actual)
+
+                        if not modo_prueba:
+                            estado_tramite = "Pendiente"
                             
-                            ruta_diploma = generar_diploma_esp(nombre_actual, carrera, str(horas), ppt_app, log, ruta_plantillas_actual)
-
-                            if not modo_prueba:
-                                estado_tramite = "Pendiente"
-                                
-                                h_bd.cell(row=sig_fila_bd, column=1, value=nombre_actual)
-                                h_bd.cell(row=sig_fila_bd, column=2, value=mat)
-                                procesadas.add(mat); sig_fila_bd += 1
-                                
-                                if correo_destinatario and "@" in correo_destinatario:
-                                    if ruta_diploma:
-                                        envio_ok = enviarESP(ruta_diploma, correo_destinatario, log)
-                                        if envio_ok: 
-                                            log_queue.put(("metric", "correo", "INFO"))
-                                            estado_tramite = "Si"
-                                            h_esp.Cells(f, 13).Value = "Correo enviado (Por codigo)"
-                                            if mat in filas_esp:
-                                                lote_nube.append({"range": f"'{HOJA_ESP}'!M{filas_esp[mat]}", "values": [["Correo enviado (Por codigo)"]]})
-                                else:
-                                    h_esp.Cells(f, 13).Value = "No se encontró su correo"
-                                    if mat in filas_esp:
-                                        lote_nube.append({"range": f"'{HOJA_ESP}'!M{filas_esp[mat]}", "values": [["No se encontró su correo"]]})
-                                    log.warning(f"⚠️ Sin correo válido para {nombre_actual}. Se marca en columna M.")
-                                
-                                h_esp.Cells(f, 10).Value = estado_tramite
-                                if mat in filas_esp:
-                                    lote_nube.append({"range": f"'{HOJA_ESP}'!J{filas_esp[mat]}", "values": [[estado_tramite]]})
-
+                            if correo_destinatario and "@" in correo_destinatario:
+                                if ruta_diploma:
+                                    envio_ok = enviarESP(ruta_diploma, correo_destinatario, log)
+                                    if envio_ok: 
+                                        log_queue.put(("metric", "correo", "INFO"))
+                                        estado_tramite = "Si"
+                                        if mat in filas_esp:
+                                            lote_nube.append({"range": f"'{HOJA_ESP}'!M{filas_esp[mat]}", "values": [["Correo enviado (Por codigo)"]]})
                             else:
-                                if correo_destinatario and "@" in correo_destinatario:
-                                    log.info(f"🧪 PRUEBA: Simulación de correo ESP a {correo_destinatario}")
-                                else:
-                                    log.info(f"🧪 PRUEBA: Simulación de escritura 'No se encontró su correo' en Columna M para {nombre_actual}")
-
-                            log_queue.put(("metric", "esp", "INFO"))
+                                if mat in filas_esp:
+                                    lote_nube.append({"range": f"'{HOJA_ESP}'!M{filas_esp[mat]}", "values": [["No se encontró su correo"]]})
+                                log.warning(f"⚠️ Sin correo válido para {nombre_actual}. Se marca en columna M.")
                             
-                            msg_resumen = f"[ESP] {'🧪 PRUEBA | ' if modo_prueba else ''}Matrícula: {mat}\n      👤 {nombre_actual}\n      📜 Oferta: {carrera} ({horas} hrs)\n      ↳ Diploma generado correctamente."
-                            log_queue.put(("res_esp", msg_resumen, "SUCCESS", nombre_actual, mat, carrera, ""))
+                            if mat in filas_esp:
+                                lote_nube.append({"range": f"'{HOJA_ESP}'!J{filas_esp[mat]}", "values": [[estado_tramite]]})
+
+                        else:
+                            if correo_destinatario and "@" in correo_destinatario:
+                                log.info(f"🧪 PRUEBA: Simulación de correo ESP a {correo_destinatario}")
+                            else:
+                                log.info(f"🧪 PRUEBA: Simulación de escritura 'No se encontró su correo' en Columna M para {nombre_actual}")
+
+                        log_queue.put(("metric", "esp", "INFO"))
+                        
+                        msg_resumen = f"[ESP] {'🧪 PRUEBA | ' if modo_prueba else ''}Matrícula: {mat}\n      👤 {nombre_actual}\n      📜 Oferta: {carrera} ({horas} hrs)\n      ↳ Diploma generado correctamente."
+                        log_queue.put(("res_esp", msg_resumen, "SUCCESS", nombre_actual, mat, carrera, ""))
 
             except Exception as e: log.error(f"Error ESP: {e}")
 
-            # ── GUARDADO FINAL ────────────────────────────────────────
+            # ── GUARDADO FINAL EN GOOGLE SHEETS ────────────────────────
             if not modo_prueba:
-                # batchUpdate — una sola petición para todo el lote
                 if lote_nube:
                     try:
                         serv.spreadsheets().values().batchUpdate(
                             spreadsheetId=ID_SEGUIMIENTO_NUBE,
-                            body={
-                                "valueInputOption": "USER_ENTERED",
-                                "data": lote_nube
-                            }
+                            body={"valueInputOption": "USER_ENTERED", "data": lote_nube}
                         ).execute()
-                        log.info("✅ Nube actualizada: %d celdas en una sola petición", len(lote_nube))
+                        log.info(f"✅ Nube actualizada con éxito: {len(lote_nube)} celdas sincronizadas.")
                     except Exception as e:
                         log.error(f"Error actualizando la nube en lote: {e}")
-
-                wb.Save()
-                wb_bd.save(str(RUTA_BD))
-                log.info("✅ Escritura en Google Sheets y Excel local completada.")
+                else:
+                    log.info("✅ Finalizado. No hubieron cambios nuevos que enviar a la nube.")
             else:
                 log.info("✅ MODO PRUEBA: Fin de ejecución sin guardado en la nube ni correos enviados.")
 
         except Exception as e:
-            log_queue.put(("error", f"❌ Error: {e}", "ERROR"))
+            log_queue.put(("error", f"❌ Error Crítico: {e}", "ERROR"))
         finally:
-            matar_proceso_excel()
             try: ppt_app.Quit(); matar_proceso("POWERPNT.EXE")
             except: pass
             try: word_app.Quit(); matar_proceso("winword.exe")
@@ -1056,6 +969,7 @@ class App(tk.Tk):
             self.status_label.config(text="● Proceso detenido con errores", fg=ERROR_COLOR)
 
 if __name__ == "__main__":
-    for d in [RUTA_BASES_DATOS, RUTA_MODULOS, RUTA_SALIDA, RUTA_IMAGENES, RUTA_RECORTES, RUTA_PLANTILLAS_NUEVAS, RUTA_PLANTILLAS_VIEJAS]:
+    # Eliminado RUTA_BASES_DATOS y RUTA_PLANTILLAS_VIEJAS
+    for d in [RUTA_MODULOS, RUTA_SALIDA, RUTA_IMAGENES, RUTA_RECORTES, RUTA_PLANTILLAS_NUEVAS]:
         d.mkdir(exist_ok=True, parents=True)
     App().mainloop()
