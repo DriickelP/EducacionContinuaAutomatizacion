@@ -1,0 +1,22 @@
+# Entornos e ignorados de Python
+__pycache__/
+*.pyc
+venv/
+env/
+
+# Credenciales y archivos secretos
+.env
+educacion-continua-490016-7ff6875c1d8f.json
+config.json
+modulos/educacion-continua-490016-7ff6875c1d8f.json
+assets/educacion-continua-490016-7ff6875c1d8f.json
+
+# Bases de datos con información real
+bases de datos/*.csv
+bases de datos/*.xlsx
+
+# Ignorar carpetas de plantillas pesadas (Se descargarán de Google Drive después)
+PlantillasAct/
+PlantillasActIngJorge/
+Tramites Digitales/
+imagenes/
