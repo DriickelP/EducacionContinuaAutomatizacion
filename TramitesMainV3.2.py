@@ -13,6 +13,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 from email.message import EmailMessage
+import importlib.util
 
 # --- NUEVAS LIBRERÍAS PARA VARIABLES DE ENTORNO ---
 from dotenv import load_dotenv
@@ -80,13 +81,55 @@ ID_SEGUIMIENTO_NUBE = "1szQLci5kxO10bTGyzQ1wQrQ9z_hITA0uAUHEZ-loaJU"
 HOJA_TEC = "SEGUIMIENTO TEC"
 HOJA_ESP = "SEGUIMIENTO ESP"
 
-sys.path.append(str(RUTA_MODULOS))
+def cargar_modulo(nombre, ruta_archivo):
+    spec = importlib.util.spec_from_file_location(nombre, ruta_archivo)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
 try:
-    from face_processor import process_image # type: ignore
-    from foto_downloader import descargar_foto # type: ignore
+    # Ajustamos la ruta para que busque tanto en desarrollo como en empaquetado
+    ruta_face = RUTA_MODULOS / "face_processor.py"
+    ruta_foto = RUTA_MODULOS / "foto_downloader.py"
+    
+    face_processor = cargar_modulo("face_processor", str(ruta_face))
+    foto_downloader = cargar_modulo("foto_downloader", str(ruta_foto))
+    
+    process_image = face_processor.process_image
+    descargar_foto = foto_downloader.descargar_foto
     FACE_PROCESSOR_DISPONIBLE = True
-except ImportError:
+except Exception as e:
+    print(f"Error cargando módulos: {e}")
     FACE_PROCESSOR_DISPONIBLE = False
+
+FACE_PROCESSOR_DISPONIBLE = False
+process_image = None
+descargar_foto = None
+
+def cargar_modulo_seguro():
+    global FACE_PROCESSOR_DISPONIBLE, process_image, descargar_foto
+    try:
+        # En ejecutable, los archivos están en _internal/modulos o modulos
+        # Intentamos buscar en la carpeta 'modulos' al lado del .exe
+        ruta_face = RUTA_MODULOS / "face_processor.py"
+        ruta_foto = RUTA_MODULOS / "foto_downloader.py"
+        
+        if not ruta_face.exists() or not ruta_foto.exists():
+            # Si no está, intentamos buscar en el directorio actual (por si acaso)
+            ruta_face = BASE_DIR / "face_processor.py"
+            ruta_foto = BASE_DIR / "foto_downloader.py"
+
+        face_processor = cargar_modulo("face_processor", str(ruta_face))
+        foto_downloader = cargar_modulo("foto_downloader", str(ruta_foto))
+        
+        process_image = face_processor.process_image
+        descargar_foto = foto_downloader.descargar_foto
+        FACE_PROCESSOR_DISPONIBLE = True
+    except Exception as e:
+        print(f"DEBUG CRÍTICO: No se pudo cargar el módulo: {e}")
+        FACE_PROCESSOR_DISPONIBLE = False
+
+cargar_modulo_seguro()
 
 # ─────────────────────────────────────────────────────────────────────
 # ESTILOS GUI
